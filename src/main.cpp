@@ -209,10 +209,30 @@ void setup() {
   Serial.println("");
   Serial.println("WiFi connected.");
   Serial.println("IP address: ");
-  Serial.println(WiFi.localIP());
+
+  auto ip = WiFi.localIP();
+  Serial.println(ip);
 
   socket_app::setup();
   server_app::setup();
+
+  auto ip_str = ip.toString();
+  auto start = ip_str.lastIndexOf(".") + 1;
+  
+  pinMode(LED_BUILTIN, OUTPUT);
+
+  for(auto it = ip_str.begin() + start, end = ip_str.end(); it != end; ++it) {
+    auto digit = *it - '0';
+
+    for (int i = 0; i < digit; i++) {
+      digitalWrite(LED_BUILTIN, LOW);
+      delay(200);
+      digitalWrite(LED_BUILTIN, HIGH);
+      delay(100);
+    }
+
+    delay(2000);
+  }
 }
 
 void loop() {
