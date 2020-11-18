@@ -178,7 +178,7 @@ const char PAGE[] PROGMEM = R"=="==(
       updateValue()
 
       if (WS.readyState === 1) {
-        WS.send(VALUE)
+        WS.send(`${VALUE}`)
       }
     }
 
@@ -196,13 +196,14 @@ const char PAGE[] PROGMEM = R"=="==(
       const EPSILON = 0.1
 
       if (value >= max - EPSILON) {
-        value = MAX_LOOP_POS.innerText
+        value = Number(MAX_LOOP_POS.innerText)
         LOOP_DIRECTION = -1
       } else if (value <= min + EPSILON) {
-        value = MIN_LOOP_POS.innerText
+        value = Number(MIN_LOOP_POS.innerText)
         LOOP_DIRECTION = +1
       }
       
+      console.log("stepLoop", {value})
       setValue(value)
     }
 
@@ -220,14 +221,18 @@ const char PAGE[] PROGMEM = R"=="==(
 
       // SMILING FACE WITH SUNGLASSES
       EMOJI.innerText =  String.fromCodePoint(0x1F60E)
+    }
+    
+    function loopGuard() {
+      stopLoop()
       // close socket, servo will go to default position
-      WS.close(4001);
+      WS.close(4001)
     }
 
     function startLoop() {
       stopLoop()
       LOOP_TIMEOUT = setInterval(stepLoop, Number(DELAY.value))
-      LOOP_GUARD_TIMEOUT = setTimeout(stopLoop, LOOP_GUARD_DELAY)
+      LOOP_GUARD_TIMEOUT = setTimeout(loopGuard, LOOP_GUARD_DELAY)
       // SMILING FACE WITH HAND ON MOUTH
       EMOJI.innerText =  String.fromCodePoint(0x1F92D)
     }
@@ -253,7 +258,7 @@ const char PAGE[] PROGMEM = R"=="==(
     }
 
     function setStatus(clas, type, description = "") {
-      if (STATUS_LOCKED) return null
+      // if (STATUS_LOCKED) return null
       STATUS.className = "status " + clas
       STATUS_TYPE.innerText = type
       STATUS_DESCRIPTION.innerText = description
@@ -268,7 +273,7 @@ const char PAGE[] PROGMEM = R"=="==(
       setStatus("red", "DISCONNECTED", event.code === 4000 ? "(only one client allowed)" : "")
     })
 
-    WS.addEventListener("open", () => {
+    WS.addEventListener("open", (event) => {
       setStatus("green", "CONNECTED")
     })
 

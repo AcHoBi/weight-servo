@@ -8,26 +8,60 @@
 #include "page.hpp"
 #include "math.hpp"
 
+#define BIZERBA 0
+#define LINEAR 1
+
+#if BIZERBA
+// cannot get ip from DHCP in Bizerba network
+IPAddress LOCAL_IP(172, 17, 103, 220);
+IPAddress GATEWAY(172, 17, 65, 1);
+IPAddress SUBNET(255, 255, 192, 0);
+IPAddress PRIMARY_DNS(10, 1, 1, 100);   //optional
+IPAddress SECONDARY_DNS(10, 1, 1, 101); //optional
+#endif
+
 const char WIFI_SSID[] = "IOT";
 const char WIFI_PASS[] = "_IOT1234";
 
 namespace servo_app {
   const int PIN = 5;
-  const int MIN = 2;
-  const int MAX = 152;
+  const int MIN = 0;
+  const int MAX = 180;
   const float DEFAULT_PERCENTAGE = 100;
 
   Servo servo;
   int value = 0;
   float percentage = 0.0f;
 
-  void set_percentage(float percentage) {
-    percentage = percentage;
-    float unclamped_float = remap(0, 100, MIN, MAX, percentage);
-    int unclamped = (int)(unclamped_float + 0.5f);
-    value = clamp(unclamped, MIN, MAX);
+  int percentage_to_value(float percentage) {
+#if LINEAR
+    // calculate linear height from circular frequency
+    // angular functions are calculated in radians 
+    // radians = degrees/180*PI;
+    // degrees = radian*180/PI;
+    
+    float deg = remap(0, 100, MIN, MAX, percentage);
+    float rad = deg / 180 * PI;
+
+    // Circular motion, harmonic oscillation
+    // Y=Ymax*sin(phi) | Ymax=r
+    float y = 90 * sin(rad);
+    float unclamped = deg <= 90 ? y : (180 - y);
+
+    int unclamped_int = (int)(unclamped + 0.5f);
+    return clamp(unclamped_int, MIN, MAX);
+#else
+    float unclamped = remap(0, 100, MIN, MAX, percentage);
+    int unclamped_int = (int)(unclamped + 0.5f);
+    return clamp(unclamped_int, MIN, MAX);
+#endif
+  }
+
+  void set_percentage(float p) {
+    percentage = p;
+    value = percentage_to_value(percentage);
     servo.write(value);
-    Serial.printf("value: %.1f (%i)", percentage, value);
+    Serial.printf("value: %.1f%% (%i)\n", percentage, value);
   }
 
   void reset() {
@@ -35,7 +69,7 @@ namespace servo_app {
   }
 
   void setup() {
-    servo.attach(PIN);
+    servo.attach(PIN, 544, 2400);
     reset();
   }
 }
@@ -56,6 +90,8 @@ namespace socket_app {
   }
 
   void handle(AsyncWebSocket* server, AsyncWebSocketClient* client, AwsEventType type, void* arg, uint8_t* data, size_t len) {
+    // Serial.printf("ws[%u] event %u\n", client->id(), (unsigned)type);
+
     if (type == WS_EVT_CONNECT) {
       Serial.printf("ws[%u] connect\n", client->id());
       for(auto other : server->getClients()) {
@@ -72,22 +108,20 @@ namespace socket_app {
       Serial.printf("ws[%u] error(%u): %s\n", client->id(), *((uint16_t*)arg), (char*)data);
       cancel();
     } else if (type == WS_EVT_DATA) {
+      // TODO: properly handle multiple frames and packets
+      //       see: https://github.com/me-no-dev/ESPAsyncWebServer#async-websocket-event
+      
       const auto info = (AwsFrameInfo*)arg;
 
-      if (info->message_opcode != WS_TEXT) {
+      if (info->opcode != WS_TEXT) {
         return;
       }
 
-      size_t space = sizeof(buffer) - index;
-      size_t cpy_len = min(space, len);
+      const auto text = (char*)data;
+      text[len] = '\0';
 
-      memcpy(buffer + index, (char*)data, cpy_len);
-      index += cpy_len;
-
-      if (info->final) {
-        servo_app::set_percentage(atof(buffer));
-        clear();
-      }
+      // Serial.printf("ws[%u]: %s\n", client->id(), text);
+      servo_app::set_percentage(atof(text));
     }
   }
 
@@ -132,6 +166,13 @@ namespace server_app {
       memcpy(static_cast<uint8_t*>(request->_tempObject) + idx, data, len);
     });
 
+    server.addHandler(&socket_app::socket);
+
+    server.onNotFound([](AsyncWebServerRequest* request) {
+      Serial.printf("Not found: %s!\r\n", request->url().c_str());
+      request->send(404);
+    });
+
     server.begin();
   }
 }
@@ -150,6 +191,13 @@ void setup() {
     snprintf(buffer, sizeof(buffer), "WeightServo-%02x%02x%02x%02x%02x%02x", mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
     WiFi.hostname(buffer);
   }
+
+#if BIZERBA
+  // Configures static IP address
+  if (!WiFi.config(LOCAL_IP, GATEWAY, SUBNET, PRIMARY_DNS, SECONDARY_DNS)) {
+    Serial.println("STA Failed to configure");
+  }
+#endif
 
   WiFi.begin(WIFI_SSID, WIFI_PASS);
 
